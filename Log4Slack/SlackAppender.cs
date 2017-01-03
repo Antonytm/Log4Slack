@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using log4net.Appender;
+using log4net.spi;
 
 namespace Log4Slack {
-    public class SlackAppender : AppenderSkeleton {
+    public class SlackAppender : log4net.Appender.AppenderSkeleton {
         private readonly Process _currentProcess = Process.GetCurrentProcess();
 
         /// <summary>
@@ -55,17 +55,17 @@ namespace Log4Slack {
         /// </summary>
         public bool UsernameAppendLoggerName { get; set; }
 
-        protected override void Append(log4net.Core.LoggingEvent loggingEvent) {
+        protected override void Append(LoggingEvent loggingEvent) {
             // Initialze the Slack client
             var slackClient = new SlackClient(WebhookUrl);
             var attachments = new List<Attachment>();
 
             if (AddAttachment) {
                 // Set fallback string
-                var theAttachment = new Attachment(string.Format("[{0}] {1} in {2} on {3}", loggingEvent.Level.DisplayName, loggingEvent.LoggerName, _currentProcess.ProcessName, Environment.MachineName));
+                var theAttachment = new Attachment(string.Format("[{0}] {1} in {2} on {3}", loggingEvent.Level.Name, loggingEvent.LoggerName, _currentProcess.ProcessName, Environment.MachineName));
 
                 // Determine attachment color
-                switch (loggingEvent.Level.DisplayName.ToLowerInvariant()) {
+                switch (loggingEvent.Level.Name) {
                     case "warn":
                         theAttachment.Color = "warning";
                         break;
@@ -84,26 +84,13 @@ namespace Log4Slack {
                     theAttachment.Fields.Insert(0, new Field("Logger") {Value = loggingEvent.LoggerName, Short = true});
 
                 // Add exception fields if exception occurred
-                var exception = loggingEvent.ExceptionObject;
-                if (exception != null) {
-                    if (AddExceptionTraceField && !string.IsNullOrWhiteSpace(exception.StackTrace))
-                        theAttachment.Fields.Insert(0, new Field("Exception Trace") { Value = "```" + exception.StackTrace + "```" });
-                    theAttachment.Fields.Insert(0, new Field("Exception Type") { Value = exception.GetType().Name, Short = true });
-                    theAttachment.Fields.Insert(0, new Field("Exception Message") { Value = exception.Message, Short = true });
-                }
+                
+                theAttachment.Fields.Insert(0, new Field("Exception Message") { Value = loggingEvent.GetExceptionStrRep(), Short = true });
 
                 attachments.Add(theAttachment);
             }
 
             String formattedMessage = loggingEvent.RenderedMessage;
-            if (Layout != null)
-            {
-                using(StringWriter writer = new StringWriter())
-                {
-                    Layout.Format(writer, loggingEvent);
-                    formattedMessage = writer.ToString();
-                }
-            }
             
             var username = Username;
             if (UsernameAppendLoggerName)
@@ -111,5 +98,6 @@ namespace Log4Slack {
 
             slackClient.PostMessageAsync(formattedMessage, username, Channel, IconUrl, IconEmoji, attachments);
         }
+
     }
 }
